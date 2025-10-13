@@ -1,0 +1,8 @@
+print("p in pa")
+p = int(input())
+print("v in l")
+v = int(input())
+print("t in k")
+t = int(input())
+n = float((p*v)/(8.314*t))
+print(n)
