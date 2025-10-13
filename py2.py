@@ -1,0 +1,7 @@
+s = input()
+ss = s.replace("a", "")
+ss = s.replace("u", "")
+ss = s.replace("i", "")
+ss = s.replace("o", "")
+ss = s.replace("e", "")
+print(ss)
