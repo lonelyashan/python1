@@ -1,8 +1,8 @@
-c = int(input())
+c = int(input("количество минут: "))
 c1 = 0.89
-s = int(input())
+s = int(input("количество sms: "))
 s1 = 0.69
-i = int(input())
+i = int(input("количество интернета в мб: "))
 i1 = 0.79
 c2 = 0
 s2 = 0
@@ -18,4 +18,4 @@ if i > 1024:
     print("лишний расход mb:", i2)
 ssu = 24.99 + c2 + s2 + i2
 ssu += ssu*0.02
-print(round(ssu, 2))
+print("общая сумма платежа:", round(ssu, 2))
