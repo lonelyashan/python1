@@ -1,0 +1,132 @@
+#include <cmath>
+#include <iostream>
+#include <vector>
+#include <iomanip>
+const double e = 1e-9;
+using namespace std;
+vector<double> gauss(vector<vector<double>>& mtrx) {
+    int n = mtrx.size();
+    int m = mtrx[0].size() - 1;
+    for (int i = 0; i < n; ++i) {
+        int p = i;
+        for (int k = i + 1; k < n; ++k) {
+            if (abs(mtrx[k][i]) > abs(mtrx[p][i])) {
+                p = k;
+            }
+            swap(mtrx[k][i], mtrx[p][i]);
+            if (abs(mtrx[i][i] < e)) {
+                    cout << "error" << endl;
+                    return {};
+            }
+            for (int j = i + 1; j <= m; ++j) {
+                mtrx[i][j] /= mtrx[i][i];
+            }
+            mtrx[i][i] = 1;
+        }
+        for (int k = 0; k < n; k++) {
+            if (k != i) {
+                double f = mtrx[k][i];
+                for (int j = i + 1; j <= m; j++) {
+                    mtrx[k][j] -= f * mtrx[i][j];
+                }
+                mtrx[k][i] = 0;
+            }
+        }
+    }
+    vector <double> s(m);
+    for (int i = 0; i < n; i++) {
+        s[i] = mtrx[i][m];
+    }
+    return s;
+}
+
+int main()
+{
+    setlocale(LC_ALL, "ru");
+    vector<double> t = { 60, 70, 80, 90, 100, 110, 120 };
+    vector<double> u = { 0.0148, 0.0124, 0.0102, 0.0085, 0.0071, 0.0059, 0.0051 };
+    int n = t.size();
+    int m = 1;
+    if (n < m + 1) {
+        cout << "error, ne podhodit dlya stepeni" << m << endl;
+        return 1;
+    }
+    vector<double>xd(n);
+    vector<double>yd(n);
+    for (int i = 0; i < n; i++) {
+       xd[i] = t[i];
+       yd[i] = log(u[i]);
+    }
+    double sumx = 0;   
+    double sumx2 = 0;   
+    double sumy = 0;   
+    double sumxy = 0;
+    for (int i = 0; i < n; ++i) {
+        sumx += xd[i];
+        sumy += yd[i];
+        sumx2 += xd[i] * xd[i];
+        sumxy += xd[i] * yd[i];
+    }
+    cout << "исходные и линеаризованные данные" << endl;
+    cout << setw(5) << "t" << setw(10) << "u" << setw(15) << "x(t)" << setw(15) << "y(ln(u))" << endl;
+    cout << string(50, '-') << endl;
+    for (int i = 0; i < n; ++i) {
+        cout << setw(5) << fixed << setprecision(2) << t[i]
+            << setw(10) << fixed << setprecision(5) << u[i]
+            << setw(15) << fixed << setprecision(5) << xd[i]
+            << setw(15) << fixed << setprecision(5) << yd[i] << endl;
+    }
+    cout << string(50, '-') << endl;
+    cout << "n = " << n << endl;
+    cout << "sumx = " << sumx << endl;
+    cout << "sumy = " << sumy << endl;
+    cout << "sumx2 = " << sumx2 << endl;
+    cout << "sumxy = " << sumxy << endl;
+    cout << string(50, '-') << endl;
+    vector<vector<double>> mtrx = {
+        {static_cast<double>(n), sumx,sumy},
+        {sumx, sumx2, sumxy}
+    };
+    cout << "матрица уравнений:" << endl;
+    for (const auto& r : mtrx) {
+        for (double v : r) {
+            cout << setw(15) << fixed << setprecision(5) << v;
+        }
+        cout << endl;
+    }
+    cout << string(50, '-') << endl;
+    vector<double> c = gauss(mtrx);
+    if (c.empty()) {
+        cout << "error, net resheniya";
+        return 1;
+    }
+    double a1 = c[0];
+    double b1 = c[1];
+    cout << "коэффициенты для линеаризованной функции: " << endl;
+    cout << "a1 = " << fixed << setprecision(9) << a1 << endl;
+    cout << "b1 = " << fixed << setprecision(9) << b1 << endl;
+    cout << string(50, '-') << endl;
+    double a = exp(a1);
+    double b = -b1;
+    cout << "коэффициенты для исходной функции: " << endl;
+    cout << "a = " << fixed << setprecision(9) << a << endl;
+    cout << "b = " << fixed << setprecision(9) << b << endl;
+    cout << string(50, '-') << endl;
+    double sumres = 0;
+    for (int i = 0; i < n; ++i) {
+        double yp = a1 + b1 * xd[i];
+        double res = yd[i] - yp;
+        sumres += res * res;
+    }
+    double resdisp = sumres / (n - (m - 1));
+    double sqr = sqrt(resdisp);
+    cout << "остаточная дисперсия: " << fixed << setprecision(9) << resdisp << endl;
+    cout << "среднеквадратичное отклонение: " << fixed << setprecision(9) << sqr << endl;
+    cout << string(50, '-') << endl;
+    cout << "аппроксимирующая функция: " << endl;
+    cout << "f = " << fixed << setprecision(5) << a << "exp(" <<
+        fixed << setprecision(5) << -b << "*t)" << endl;
+    return 0;
+}
+
+
