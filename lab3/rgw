@@ -1,0 +1,134 @@
+#include <iostream>
+#include <vector>
+#include <cmath>   
+#include <iomanip> 
+#include <numeric> 
+using namespace std;
+vector<double> solveGaussian(vector<vector<double>>& augmented_matrix) {
+    int n = augmented_matrix.size();
+    int m = augmented_matrix[0].size() - 1;
+    for (int i = 0; i < n; ++i) {
+        int pivot_row = i;
+        for (int k = i + 1; k < n; ++k) {
+            if (abs(augmented_matrix[k][i]) > abs(augmented_matrix[pivot_row][i])) {
+                pivot_row = k;
+            }
+        }
+        swap(augmented_matrix[i], augmented_matrix[pivot_row]);
+        if (abs(augmented_matrix[i][i]) < 1e-9) {
+            cerr << "Ошибка: Диагональный элемент близок к нулю. Система может быть вырожденной или иметь множественные решения." << std::endl;
+            return {};
+        }
+        for (int j = i + 1; j <= m; ++j) {
+            augmented_matrix[i][j] /= augmented_matrix[i][i];
+        }
+        augmented_matrix[i][i] = 1.0;
+        for (int k = 0; k < n; ++k) {
+            if (k != i) {
+                double factor = augmented_matrix[k][i];
+                for (int j = i + 1; j <= m; ++j) {
+                    augmented_matrix[k][j] -= factor * augmented_matrix[i][j];
+                }
+                augmented_matrix[k][i] = 0.0;
+            }
+        }
+    }
+   vector<double> solutions(m);
+    for (int i = 0; i < n; ++i) {
+        solutions[i] = augmented_matrix[i][m];
+    }
+
+    return solutions;
+}
+
+int main() {
+    setlocale(LC_ALL, "ru");
+    vector<double> t_values = { 60, 70, 80, 90, 100, 110, 120 };
+    vector<double> mu_values = { 0.0148, 0.0124, 0.0102, 0.0085, 0.0071, 0.0059, 0.0051 };
+    int N = t_values.size();
+    int m = 1;
+    if (N < m + 1) {
+        cerr << "Недостаточно данных для аппроксимации полиномом степени " << m << endl;
+        return 1;
+    }
+   vector<double> X_data(N);
+    vector<double> Y_data(N);
+    for (int i = 0; i < N; ++i) {
+        X_data[i] = t_values[i];
+        Y_data[i] = log(mu_values[i]);
+    }
+    double sum_X = 0.0;
+    double sum_Y = 0.0;
+    double sum_X_sq = 0.0;
+    double sum_XY = 0.0;
+    for (int i = 0; i < N; ++i) {
+        sum_X += X_data[i];
+        sum_Y += Y_data[i];
+        sum_X_sq += X_data[i] * X_data[i];
+        sum_XY += X_data[i] * Y_data[i];
+    }
+    cout << "Исходные данные и линеаризованные данные:" << endl;
+    cout << setw(5) << "t" << setw(10) << "mu" << setw(15) << "X (t)" << setw(15) << "Y (ln(mu))" << endl;
+    cout << string(50, '-') << endl;
+    for (int i = 0; i < N; ++i) {
+        cout << setw(5) << fixed << setprecision(2) << t_values[i]
+            << setw(10) << fixed << setprecision(4) << mu_values[i]
+            << setw(15) << fixed << setprecision(5) << X_data[i]
+            << setw(15) << fixed << setprecision(5) << Y_data[i] << endl;
+    }
+    cout << string(50, '-') << endl;
+    cout << "N = " << N << endl;
+    cout << "Sum(X) = " << sum_X << endl;
+    cout << "Sum(Y) = " << sum_Y << endl;
+    cout << "Sum(X^2) = " << sum_X_sq << endl;
+    cout << "Sum(X*Y) = " << sum_XY << endl;
+   cout << string(50, '-') << endl;
+   vector<vector<double>> augmented_matrix = {
+        {static_cast<double>(N), sum_X, sum_Y},
+        {sum_X, sum_X_sq, sum_XY}
+    };
+ cout << "Расширенная матрица системы нормальных уравнений:" << endl;
+    for (const auto& row : augmented_matrix) {
+        for (double val : row) {
+            cout << setw(15) << fixed << setprecision(5) << val;
+        }
+        cout << endl;
+    }
+    cout << string(50, '-') << endl;
+   vector<double> coefficients = solveGaussian(augmented_matrix);
+
+    if (coefficients.empty()) {
+       cerr << "Не удалось решить систему уравнений." << endl;
+        return 1;
+    }
+    double A = coefficients[0];
+    double B = coefficients[1];
+  cout << "Найденные коэффициенты для линеаризованной функции Y = A + B*X:" << endl;
+  cout << "A = " << fixed << setprecision(9) << A << endl;
+  cout << "B = " << fixed << setprecision(9) << B << endl;
+    cout << string(50, '-') << endl;
+    double a = exp(A);
+    double beta = -B;
+   cout << "Найденные коэффициенты для исходной функции mu = a * exp(-beta * t):" << endl;
+  cout << "a = " << fixed << setprecision(9) << a << endl;
+ cout << "beta = " << fixed << setprecision(9) << beta << endl;
+cout << string(50, '-') << endl;
+
+    double sum_squared_residuals = 0.0;
+    for (int i = 0; i < N; ++i) {
+        double Y_predicted = A + B * X_data[i];
+        double residual = Y_data[i] - Y_predicted;
+        sum_squared_residuals += residual * residual;
+    }
+    double residual_dispersion = sum_squared_residuals / (N - (m + 1));
+    double standard_deviation = sqrt(residual_dispersion);
+    cout << "Остаточная дисперсия (s^2) для линеаризованной модели: "
+        << fixed << setprecision(9) << residual_dispersion << endl;
+    cout << "Среднеквадратичное отклонение (sigma) для линеаризованной модели: "
+        << fixed << setprecision(9) << standard_deviation << endl;
+    cout << string(50, '-') << endl;
+    cout << "Построенная аппроксимирующая функция: mu(t) = "
+        << fixed << setprecision(5) << a << " * exp("
+        << fixed << setprecision(5) << -beta << " * t)" << endl;
+    return 0;
+}
