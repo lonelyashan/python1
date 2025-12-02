@@ -1,0 +1,197 @@
+#include <iostream>   
+#include <vector>     
+#include <cmath>      
+#include <iomanip>    
+#include <functional> 
+#include <numeric>    
+using namespace std;
+using Vector = vector<double>;
+using Matrix = vector<Vector>;
+const double omega = 25.0;
+const double ap = 2.5 + omega / 40.0; 
+const double ts = 0.0;
+const double te = 1.0;
+const double tumax = 0.1;   
+const double tumin = 1e-6;  
+void vector1(const Vector& v) {
+    cout << "[";
+    for (size_t i = 0; i < v.size(); ++i) {
+        cout << v[i] << (i == v.size() - 1 ? "" : ", ");
+    }
+    cout << "]";
+}
+Vector vector2(const Matrix& m, const Vector& v) {
+    if (m.size() != 2 || m[0].size() != 2 || v.size() != 2) {
+        cout << "error" << endl;
+        return { 0.0, 0.0 };
+    }
+    Vector r(2);
+    r[0] = m[0][0] * v[0] + m[0][1] * v[1];
+    r[1] = m[1][0] * v[0] + m[1][1] * v[1];
+    return r;
+}
+Matrix matrix2(const Matrix& m) {
+    if (m.size() != 2 || m[0].size() != 2) {
+        cerr << "error" << endl;
+        return { {0.0, 0.0}, {0.0, 0.0} };
+    }
+    double det = m[0][0] * m[1][1] - m[0][1] * m[1][0];
+    if (abs(det) < 1e-12) { 
+        cerr << "error, det: " << det << endl;
+        return { {1.0, 0.0}, {0.0, 1.0} };
+    }
+    return { {m[1][1] / det, -m[0][1] / det}, {-m[1][0] / det, m[0][0] / det} };
+}
+
+double norm(const Vector& v) {
+    double sum2 = 0.0;
+    for (double val : v) {
+        sum2 += val * val;
+    }
+    return sqrt(sum2);
+}
+
+Vector fod(double t, const Vector& y) {
+    Vector rhs(2);
+    double u1 = y[0];
+    double u2 = y[1];
+    double sintdt = (t == 0.0) ? 1.0 : sin(t) / t; 
+    double atd1id2 = (ap * t) / (1.0 + t * t);
+    rhs[0] = -u1 * u2 + sintdt;
+    rhs[1] = -u2 * u2 + atd1id2;
+    return rhs;
+}
+
+void euler(double itu) {
+    cout << "\nявный метод эйлера" << endl;
+    cout << "начальный шаг: " << itu << endl;
+    Vector yc = { 0.0, -0.412 }; 
+    double tc = ts;
+    cout << "t = " << setw(8) << tc << ", y = ";
+    vector1(yc);
+    cout << endl;
+    while (tc < te) {
+        double cs = itu;
+        if (tc + cs > te) {
+            cs = te - tc; 
+        }
+        Vector f = fod(tc, yc);
+        yc[0] += cs * f[0];
+        yc[1] += cs * f[1];
+        tc += cs;
+        cout << "t = " << setw(8) << tc << ", y = ";
+        vector1(yc);
+        cout << endl;
+        if (tc >= te) break;
+    }
+}
+Vector fnewton(const Vector& yn, const Vector& yk, double t, double tu) {
+    Vector f(2);
+    Vector fy = fod(t, yn);
+    f[0] = yn[0] - yk[0] - tu * fy[0];
+    f[1] = yn[1] - yk[1] - tu * fy[1];
+    return f;
+}
+Matrix jnewton(const Vector& yn, double tu) { 
+    double u1 = yn[0];
+    double u2 = yn[1];
+    Matrix fo = {
+        {-u2, -u1},
+        {0.0, -2.0 * u2}
+    };
+    Matrix jf = {
+        {1.0 - tu * fo[0][0], 0.0 - tu * fo[0][1]},
+        {0.0 - tu * fo[1][0], 1.0 - tu * fo[1][1]}
+    };
+    return jf;
+}
+Vector newton(const Vector& yk, double tn, double tau,
+    double nt = 1e-8, int nit = 100) {
+    Vector yn = yk; 
+    for (int iter = 0; iter < nit; ++iter) {
+        Vector f = fnewton(yn, yk, tn, tau);
+        Matrix jf = jnewton(yn, tau);
+        Matrix jfi = matrix2(jf);
+        if (jfi[0][0] == 1.0 && jfi[0][1] == 0.0 && jfi[1][0] == 0.0 && jfi[1][1] == 1.0) {
+  
+            return yk;
+        }
+        Vector dy = vector2(jfi, f);
+        dy[0] *= -1.0; 
+        dy[1] *= -1.0;
+        yn[0] += dy[0];
+        yn[1] += dy[1];
+
+        if (norm(dy) < nt) {
+            return yn; 
+        }
+    }
+    return yk; 
+}
+enum ss { quaz, three };
+void imeuler(double itu, double e, ss str) {
+    cout << "\nнеявный адаптивный метод эйлера" << endl;
+    cout << "начальный шаг: " << itu << "e: " << e << endl;
+    cout << "выбор: " << (str == quaz ? "квазиоптимальный" : "правило трех зон") << endl;
+    Vector yc = { 0.0, -0.412 }; 
+    double tc = ts; 
+    double ctu = itu; 
+    cout << "t = " <<setw(8) << tc << ", y = ";
+    vector1(yc);
+    cout << endl;
+    while (tc < te) {
+        if (ctu > tumax) ctu = tumax;
+        if (ctu < tumin) ctu = tumin;
+        double tnc = tc + ctu;
+        if (tnc > te) {
+            ctu = te - tc; 
+            tnc = te;
+        }
+        Vector ync = newton(yc, tnc, ctu);
+        Vector fy = fnewton(ync, yc, tnc, ctu);
+        double maxerr = 0.0;
+        for (int i = 0; i < 2; ++i) {
+            maxerr = max(maxerr, abs(fy[i]));
+        }
+        double newtu = ctu;
+        if (maxerr > 0) { 
+            if (str == quaz) {
+                newtu = ctu * sqrt(e / maxerr);
+            }
+            else { 
+                if (maxerr > e) { 
+                    newtu = ctu / 2.0;
+                }
+                else if (maxerr < e / 4.0) { 
+                    newtu = ctu * 2.0;
+                }  
+            }
+        }
+        if (newtu > tumax) newtu = tumax;
+        if (newtu < tumin) newtu = tumin;
+        if (maxerr > e) {
+            ctu = newtu; 
+            continue; 
+        }
+        tc = tnc;
+        yc = ync;
+        cout << "t = " << setw(8) << tc << ", y = ";
+        vector1(yc);
+        cout << ", tau = " << setw(8) << ctu << ", error = " << setw(8) << maxerr << endl;
+        ctu = newtu;
+        if (tc >= te) break; 
+    }
+}
+
+int main() {
+    setlocale(LC_ALL, "RU");
+    cout << fixed << setprecision(8); 
+    cout << "параметр а = " << ap << ", omega = " << omega << endl;
+    cout << "интервал: [" << ts << ", " << te << "]" << endl;
+    euler(0.01);
+    imeuler(0.01, 1e-3, quaz);
+    imeuler(0.01, 1e-3, three);
+    imeuler(0.01, 1e-5, quaz);
+    imeuler(0.01, 1e-5, three);
+    return 0;
+}
