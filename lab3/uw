@@ -1,0 +1,308 @@
+
+#include <iostream>   // Для ввода/вывода в консоль
+#include <vector>     // Для std::vector (Vector и Matrix)
+#include <cmath>      // Для математических функций: sin, cos, sqrt, pow, abs
+#include <iomanip>    // Для форматирования вывода: setprecision, fixed
+#include <functional> // Для std::function
+#include <numeric>    // Для std::accumulate (хотя здесь не используется)
+
+// --- 0. Определения типов и глобальные параметры ---
+using Vector = std::vector<double>;
+using Matrix = std::vector<Vector>;
+
+// Параметры системы ОДУ
+const double OMEGA = 25.0;
+const double A_PARAM = 2.5 + OMEGA / 40.0; // a = 2.5 + 25/40 = 3.125
+
+const double T_START = 0.0;
+const double T_END = 1.0;
+
+const double TAU_MAX = 0.1;   // Максимальный допустимый шаг
+const double TAU_MIN = 1e-6;  // Минимальный допустимый шаг
+
+// --- 1. Вспомогательные функции для вектора и матрицы (2x2) ---
+
+// Печать вектора
+void print_vector(const Vector& v) {
+    std::cout << "[";
+    for (size_t i = 0; i < v.size(); ++i) {
+        std::cout << v[i] << (i == v.size() - 1 ? "" : ", ");
+    }
+    std::cout << "]";
+}
+
+// Умножение матрицы 2x2 на вектор 2x1
+Vector multiply_matrix_vector(const Matrix& M, const Vector& v) {
+    // Простая проверка размеров для 2x2
+    if (M.size() != 2 || M[0].size() != 2 || v.size() != 2) {
+        std::cerr << "Error: Matrix-vector dimensions mismatch for 2x2." << std::endl;
+        return {0.0, 0.0};
+    }
+    Vector result(2);
+    result[0] = M[0][0] * v[0] + M[0][1] * v[1];
+    result[1] = M[1][0] * v[0] + M[1][1] * v[1];
+    return result;
+}
+
+// Обращение матрицы 2x2
+Matrix inverse_2x2(const Matrix& M) {
+    if (M.size() != 2 || M[0].size() != 2) {
+        std::cerr << "Error: Invalid matrix for 2x2 inverse." << std::endl;
+        return {{0.0, 0.0}, {0.0, 0.0}};
+    }
+    double det = M[0][0] * M[1][1] - M[0][1] * M[1][0];
+    if (std::abs(det) < 1e-12) { // Проверка на вырожденность
+        std::cerr << "Error: Singular matrix for inverse. Determinant: " << det << std::endl;
+        // Возвращаем единичную матрицу или бросаем исключение в зависимости от обработки ошибок
+        return {{1.0, 0.0}, {0.0, 1.0}}; 
+    }
+    return {{M[1][1] / det, -M[0][1] / det}, {-M[1][0] / det, M[0][0] / det}};
+}
+
+// Норма вектора (Евклидова)
+double vector_norm(const Vector& v) {
+    double sum_sq = 0.0;
+    for (double val : v) {
+        sum_sq += val * val;
+    }
+    return std::sqrt(sum_sq);
+}
+
+// --- 2. Правая часть системы ОДУ f(t, y) ---
+// y[0] -> u1, y[1] -> u2
+Vector f_ode(double t, const Vector& y) {
+    Vector rhs(2);
+    double u1 = y[0];
+    double u2 = y[1];
+
+    double sin_t_div_t = (t == 0.0) ? 1.0 : std::sin(t) / t; // Обработка t=0: sin(t)/t -> 1
+    double at_div_1_plus_t2 = (A_PARAM * t) / (1.0 + t * t);
+
+    rhs[0] = -u1 * u2 + sin_t_div_t;
+    rhs[1] = -u2 * u2 + at_div_1_plus_t2;
+    return rhs;
+}
+
+// --- 3. Явный метод Эйлера (Алгоритм 3.1) ---
+void explicit_euler_solver(double initial_tau) {
+    std::cout << "\n--- Явный метод Эйлера ---" << std::endl;
+    std::cout << "Начальный шаг интегрирования: " << initial_tau << std::endl;
+
+    Vector y_curr = {0.0, -0.412}; // u1(0), u2(0)
+    double t_curr = T_START;
+
+    std::cout << "t = " << std::setw(8) << t_curr << ", y = ";
+    print_vector(y_curr);
+    std::cout << std::endl;
+
+    while (t_curr < T_END) {
+        double current_tau_step = initial_tau;
+        if (t_curr + current_tau_step > T_END) {
+            current_tau_step = T_END - t_curr; // Последний шаг
+        }
+        
+        Vector f_val = f_ode(t_curr, y_curr);
+        
+        y_curr[0] += current_tau_step * f_val[0];
+        y_curr[1] += current_tau_step * f_val[1];
+        t_curr += current_tau_step;
+
+        std::cout << "t = " << std::setw(8) << t_curr << ", y = ";
+        print_vector(y_curr);
+        std::cout << std::endl;
+
+        if (t_curr >= T_END) break;
+    }
+}
+
+// --- 4. Функции для неявного метода Эйлера (Ньютоновский метод) ---
+
+// F(Y_next) = Y_next - Y_k - tau * f(Y_next, t_next) = 0 (Формула 3.14)
+Vector F_newton(const Vector& Y_next, const Vector& Y_k, double t_next, double tau) {
+    Vector F_val(2);
+    Vector f_val_at_Y_next = f_ode(t_next, Y_next);
+    F_val[0] = Y_next[0] - Y_k[0] - tau * f_val_at_Y_next[0];
+    F_val[1] = Y_next[1] - Y_k[1] - tau * f_val_at_Y_next[1];
+    return F_val;
+}
+
+// Якобиан J_F(Y_next) = I - tau * d(f)/d(Y_next)
+// d(f)/d(Y_next) - матрица Якоби правой части f_ode по Y_next = [u1, u2]
+Matrix jacobian_F_newton(const Vector& Y_next, double tau) { // t_next не нужен для якобиана df/dY_next
+    // f_ode:
+    // f1 = -u1*u2 + sin(t)/t
+    // f2 = -u2^2 + at/(1+t^2)
+
+    // Jacobian of f_ode w.r.t Y_next = [u1, u2]
+    // df1/du1 = -u2
+    // df1/du2 = -u1
+    // df2/du1 = 0
+    // df2/du2 = -2*u2
+
+    double u1 = Y_next[0];
+    double u2 = Y_next[1];
+
+    Matrix J_f_ode = {
+        {-u2, -u1},
+        {0.0, -2.0 * u2}
+    };
+
+    Matrix J_F_val = {
+        {1.0 - tau * J_f_ode[0][0], 0.0 - tau * J_f_ode[0][1]},
+        {0.0 - tau * J_f_ode[1][0], 1.0 - tau * J_f_ode[1][1]}
+    };
+    return J_F_val;
+}
+
+// Ньютоновский метод для решения F(Y_next) = 0
+Vector newton_solver(const Vector& Y_k, double t_next, double tau,
+                       double newton_tolerance = 1e-8, int max_newton_iter = 100) {
+    
+    Vector Y_next_guess = Y_k; // Начальное приближение: Y_k
+    
+    for (int iter = 0; iter < max_newton_iter; ++iter) {
+        Vector F_val = F_newton(Y_next_guess, Y_k, t_next, tau);
+        Matrix J_F = jacobian_F_newton(Y_next_guess, tau);
+        Matrix J_F_inv = inverse_2x2(J_F);
+
+        // Проверка на вырожденность Якобиана (inverse_2x2 уже выводит ошибку)
+        if (J_F_inv[0][0] == 1.0 && J_F_inv[0][1] == 0.0 && J_F_inv[1][0] == 0.0 && J_F_inv[1][1] == 1.0) {
+             // Это означает, что inverse_2x2 вернула единичную матрицу из-за ошибки (вырожденности)
+             // Если Newton не смог найти решение, можем вернуть предыдущее состояние
+            // std::cerr << "Newton solver error: Singular Jacobian, returning Y_k." << std::endl;
+            return Y_k; 
+        }
+        
+        Vector delta_Y = multiply_matrix_vector(J_F_inv, F_val);
+        delta_Y[0] *= -1.0; // Мы решаем J*delta_Y = -F
+        delta_Y[1] *= -1.0;
+
+        Y_next_guess[0] += delta_Y[0];
+        Y_next_guess[1] += delta_Y[1];
+
+        if (vector_norm(delta_Y) < newton_tolerance) {
+            return Y_next_guess; // Сходимость достигнута
+        }
+    }
+    // std::cerr << "Newton solver did not converge after " << max_newton_iter << " iterations at t=" << t_next << std::endl;
+    return Y_k; // Возвращаем предыдущее значение в случае несходимости
+}
+
+// --- 5. Неявный метод Эйлера с адаптивным шагом (Алгоритм 3.2) ---
+enum StepStrategy { QUASI_OPTIMAL, THREE_ZONE };
+
+void implicit_euler_adaptive_solver(double initial_tau, double target_epsilon, StepStrategy strategy) {
+    std::cout << "\n--- Неявный метод Эйлера (адаптивный) ---" << std::endl;
+    std::cout << "Начальный шаг: " << initial_tau << ", Целевая точность (epsilon_доп): " << target_epsilon << std::endl;
+    std::cout << "Стратегия выбора шага: " << (strategy == QUASI_OPTIMAL ? "Квазиоптимальная (3.17)" : "Правило трех зон (3.18)") << std::endl;
+
+    Vector y_curr = {0.0, -0.412}; // y_k в алгоритме
+    double t_curr = T_START; // t_k в алгоритме
+
+    double current_tau = initial_tau; // tau_k в алгоритме (предлагаемый шаг)
+
+    std::cout << "t = " << std::setw(8) << t_curr << ", y = ";
+    print_vector(y_curr);
+    std::cout << std::endl;
+
+    while (t_curr < T_END) {
+        // Убедиться, что current_tau в пределах допустимых значений
+        if (current_tau > TAU_MAX) current_tau = TAU_MAX;
+        if (current_tau < TAU_MIN) current_tau = TAU_MIN;
+
+        double t_next_candidate = t_curr + current_tau;
+        if (t_next_candidate > T_END) {
+            current_tau = T_END - t_curr; // Последний шаг, чтобы не выйти за T_END
+            t_next_candidate = T_END;
+        }
+
+        // Вычислить y_next_candidate (y_{k+1}) с помощью метода Ньютона
+        Vector y_next_candidate = newton_solver(y_curr, t_next_candidate, current_tau);
+        
+        // --- 5.1. Оценка локальной погрешности (Формула 3.16) ---
+        // epsilon_k^i = (tau_k / (t_k - t_{k-1})) * (y_k^i - y_{k-1}^i - (t_k - t_{k-1}) * f_i(y_k, t_k))
+        // Согласно Алгоритму 3.2, п.5, вычисляем epsilon_k^i относительно y_{k+1}.
+        // Это означает, что в формуле (3.16):
+        // y_k -> y_next_candidate (только что вычисленное значение)
+        // y_{k-1} -> y_curr (значение на предыдущем шаге)
+        // t_k -> t_next_candidate
+        // t_{k-1} -> t_curr
+        // (t_k - t_{k-1}) -> current_tau
+        // tau_k (в числителе) -> current_tau (текущий шаг, который мы оценили)
+
+        // Таким образом, формула 3.16 упрощается до:
+        // epsilon_k^i = y_next_candidate[i] - y_curr[i] - current_tau * f_ode(t_next_candidate, y_next_candidate)[i]
+        // Это не что иное, как компонента вектора F_newton, которая должна быть близка к нулю.
+        
+        Vector F_val_at_y_next = F_newton(y_next_candidate, y_curr, t_next_candidate, current_tau);
+        double max_abs_error = 0.0;
+        for (int i = 0; i < 2; ++i) {
+            max_abs_error = std::max(max_abs_error, std::abs(F_val_at_y_next[i]));
+        }
+
+        // --- 5.2. Корректировка шага (Алгоритм 3.2, п. 6, 7, 8) ---
+        double new_tau_proposal = current_tau; // Инициализируем новым предложенным шагом
+        if (max_abs_error > 0) { // Избегаем деления на ноль, если ошибка нулевая
+            if (strategy == QUASI_OPTIMAL) {
+                // Формула (3.17): tau_{k+1} = tau_k * sqrt(epsilon_доп / |epsilon_k|)
+                // p=2 для неявного Эйлера (квадратичная сходимость)
+                new_tau_proposal = current_tau * std::sqrt(target_epsilon / max_abs_error);
+            } else { // THREE_ZONE (Формула 3.18)
+                if (max_abs_error > target_epsilon) { // Ошибка слишком большая
+                    new_tau_proposal = current_tau / 2.0;
+                } else if (max_abs_error < target_epsilon / 4.0) { // Ошибка слишком маленькая, можно увеличить шаг
+                    new_tau_proposal = current_tau * 2.0;
+                }
+                // Иначе (target_epsilon / 4.0 <= max_abs_error <= target_epsilon), new_tau_proposal = current_tau
+            }
+        }
+        
+        // Ограничения на предложенный шаг (Формула 3.19)
+        if (new_tau_proposal > TAU_MAX) new_tau_proposal = TAU_MAX;
+        if (new_tau_proposal < TAU_MIN) new_tau_proposal = TAU_MIN;
+
+        // --- 5.3. Принятие/отклонение шага (Алгоритм 3.2, п. 6) ---
+        if (max_abs_error > target_epsilon) {
+            // Ошибка слишком большая, шаг отклонен. Уменьшаем шаг и повторяем на том же интервале.
+            current_tau = new_tau_proposal; // current_tau становится уменьшенным
+            //std::cout << "  Error too high (" << max_abs_error << "), retrying step with tau=" << current_tau << std::endl;
+            continue; // Возвращаемся в начало цикла while для той же t_curr
+        }
+
+        // Шаг успешно принят
+        t_curr = t_next_candidate;
+        y_curr = y_next_candidate;
+
+        std::cout << "t = " << std::setw(8) << t_curr << ", y = ";
+        print_vector(y_curr);
+        std::cout << ", tau = " << std::setw(8) << current_tau << ", error = " << std::setw(8) << max_abs_error << std::endl;
+
+        // Подготовка шага для следующей итерации (Алгоритм 3.2, п. 7, 8)
+        current_tau = new_tau_proposal;
+        // Если t_curr + current_tau > T_END, то current_tau будет скорректирован в начале следующего цикла
+
+        if (t_curr >= T_END) break; // Завершаем, если достигли или превысили T_END
+    }
+}
+
+// --- Main функция ---
+int main() {
+    std::cout << std::fixed << std::setprecision(8); // Формат вывода
+
+    std::cout << "Параметр A = " << A_PARAM << ", Omega = " << OMEGA << std::endl;
+    std::cout << "Интервал интегрирования: [" << T_START << ", " << T_END << "]" << std::endl;
+    
+    // Задание 1: Явный метод Эйлера
+    explicit_euler_solver(0.01); // Пример с фиксированным шагом 0.01
+
+    // Задание 2: Неявный метод Эйлера с адаптивным шагом
+    // Для epsilon_доп = 10^-3
+    implicit_euler_adaptive_solver(0.01, 1e-3, QUASI_OPTIMAL);
+    implicit_euler_adaptive_solver(0.01, 1e-3, THREE_ZONE);
+
+    // Для epsilon_доп = 10^-5
+    implicit_euler_adaptive_solver(0.01, 1e-5, QUASI_OPTIMAL);
+    implicit_euler_adaptive_solver(0.01, 1e-5, THREE_ZONE);
+
+    return 0;
+}
